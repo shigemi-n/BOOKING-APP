@@ -107,6 +107,48 @@ function UserView({ ticketTypes, availableDates, maxPeople }) {
   const [ticketsCount, setTicketsCount] = useState({});
   const [userInfo, setUserInfo] = useState({ name: '', email: '', phone: '' });
 
+  // カレンダー表示用の現在の年月管理
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+
+  // カレンダーの日にちを生成するヘルパー
+  const calendarDays = useMemo(() => {
+    const year = currentMonth.getFullYear();
+    const month = currentMonth.getMonth();
+    
+    // 月の最初の日と最後の日
+    const firstDayOfMonth = new Date(year, month, 1);
+    
+    // カレンダーの開始日（前の月の残りの日数分を埋める）
+    const startDay = new Date(firstDayOfMonth);
+    startDay.setDate(1 - firstDayOfMonth.getDay());
+    
+    const days = [];
+    const tempDate = new Date(startDay);
+    
+    // 6週間分（42日）の日付を生成
+    for (let i = 0; i < 42; i++) {
+      const dateStr = `${tempDate.getFullYear()}-${String(tempDate.getMonth() + 1).padStart(2, '0')}-${String(tempDate.getDate()).padStart(2, '0')}`;
+      
+      // availableDatesから該当する日付のステータスを探す
+      const dateInfo = availableDates.find(d => d.fullDate === dateStr);
+      
+      days.push({
+        fullDate: dateStr,
+        day: tempDate.getDate(),
+        month: tempDate.getMonth(),
+        isCurrentMonth: tempDate.getMonth() === month,
+        status: dateInfo ? dateInfo.status : 'closed', // データがない日は休業扱い
+        dateString: dateInfo ? dateInfo.dateString : ''
+      });
+      tempDate.setDate(tempDate.getDate() + 1);
+    }
+    return days;
+  }, [currentMonth, availableDates]);
+
+  const changeMonth = (offset) => {
+    setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + offset, 1));
+  };
+
   // チケット種類が変更されたらカウント用ステートを初期化
   useEffect(() => {
     setTicketsCount(prev => {
@@ -153,41 +195,86 @@ function UserView({ ticketTypes, availableDates, maxPeople }) {
     });
   };
 
-  // ステップ1: 日にち選択
+  // ステップ1: 日にち選択 (カレンダー形式)
   const renderStep1 = () => (
     <div className="space-y-4">
-      <h2 className="text-xl font-bold text-gray-800 border-b pb-2">ご希望の日にちを選択してください</h2>
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-        {availableDates.map((d) => {
-          const isSelected = selectedDate === d.fullDate;
-          const isUnavailable = d.status === 'full' || d.status === 'closed';
-          const statusObj = STATUS_MAP[d.status];
-
-          return (
-            <button
-              key={d.fullDate}
-              disabled={isUnavailable}
-              onClick={() => setSelectedDate(d.fullDate)}
-              className={`
-                p-3 rounded-lg border-2 flex flex-col items-center justify-center transition-all duration-200
-                ${isUnavailable ? 'opacity-50 cursor-not-allowed bg-gray-50 border-gray-200' : 'cursor-pointer hover:border-blue-300'}
-                ${isSelected ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200' : 'border-gray-200 bg-white'}
-              `}
-            >
-              <span className="text-sm text-gray-500">{d.dayOfWeek}曜日</span>
-              <span className="text-lg font-bold text-gray-800">{d.dateString}</span>
-              <div className={`mt-2 px-2 py-0.5 rounded-full text-xs font-bold ${statusObj.bgColor} ${statusObj.color}`}>
-                {statusObj.label} {statusObj.text}
-              </div>
-            </button>
-          );
-        })}
+      <div className="flex items-center justify-between border-b pb-4">
+        <h2 className="text-xl font-bold text-gray-800">ご希望の日にちを選択してください</h2>
+        <div className="flex items-center space-x-4">
+          <button onClick={() => changeMonth(-1)} className="p-2 hover:bg-gray-100 rounded-full">
+            <ChevronLeft className="w-5 h-5" />
+          </button>
+          <span className="font-bold text-lg">{currentMonth.getFullYear()}年 {currentMonth.getMonth() + 1}月</span>
+          <button onClick={() => changeMonth(1)} className="p-2 hover:bg-gray-100 rounded-full">
+            <ChevronRight className="w-5 h-5" />
+          </button>
+        </div>
       </div>
+
+      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+        {/* 曜日ヘッダー */}
+        <div className="grid grid-cols-7 bg-gray-50 border-b">
+          {['日', '月', '火', '水', '木', '金', '土'].map((day, i) => (
+            <div key={day} className={`py-2 text-center text-xs font-bold ${i === 0 ? 'text-red-500' : i === 6 ? 'text-blue-500' : 'text-gray-500'}`}>
+              {day}
+            </div>
+          ))}
+        </div>
+
+        {/* カレンダーグリッド */}
+        <div className="grid grid-cols-7 divide-x divide-y">
+          {calendarDays.map((d, i) => {
+            const isSelected = selectedDate === d.fullDate;
+            const isUnavailable = d.status === 'full' || d.status === 'closed' || !d.isCurrentMonth;
+            const statusObj = STATUS_MAP[d.status];
+
+            return (
+              <button
+                key={i}
+                disabled={isUnavailable}
+                onClick={() => setSelectedDate(d.fullDate)}
+                className={`
+                  h-24 p-1 flex flex-col items-center justify-start transition-all relative
+                  ${!d.isCurrentMonth ? 'bg-gray-50' : 'bg-white hover:bg-blue-50'}
+                  ${isSelected ? 'bg-blue-100 ring-2 ring-blue-500 z-10' : ''}
+                  ${isUnavailable && d.isCurrentMonth ? 'cursor-not-allowed' : 'cursor-pointer'}
+                `}
+              >
+                <span className={`text-sm font-medium ${!d.isCurrentMonth ? 'text-gray-300' : 'text-gray-700'}`}>
+                  {d.day}
+                </span>
+                
+                {d.isCurrentMonth && (
+                  <div className="mt-auto mb-1 flex flex-col items-center">
+                    <span className={`text-lg font-bold ${statusObj.color}`}>
+                      {statusObj.label}
+                    </span>
+                    <span className="text-[10px] scale-90 text-gray-500">
+                      {statusObj.text}
+                    </span>
+                  </div>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 凡例 */}
+      <div className="flex flex-wrap gap-4 text-xs text-gray-500 py-2">
+        {Object.entries(STATUS_MAP).map(([key, value]) => (
+          <div key={key} className="flex items-center">
+            <span className={`font-bold mr-1 ${value.color}`}>{value.label}</span>
+            <span>{value.text}</span>
+          </div>
+        ))}
+      </div>
+
       <div className="flex justify-end mt-6">
         <button
           disabled={!selectedDate}
           onClick={handleNext}
-          className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white font-bold py-3 px-6 rounded-lg flex items-center transition-colors"
+          className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white font-bold py-3 px-6 rounded-lg flex items-center transition-colors shadow-sm"
         >
           次へ進む <ChevronRight className="ml-2 w-5 h-5" />
         </button>
